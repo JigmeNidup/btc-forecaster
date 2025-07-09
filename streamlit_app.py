@@ -15,7 +15,7 @@ if uploaded_file:
     # Load data
     df = pd.read_csv(uploaded_file)
     df['Date'] = pd.to_datetime(df['Date'])
-    df = df[['Date', 'Close**']].rename(columns={'Date': 'ds', 'Price': 'y'})
+    df = df[['Date', 'Price']].rename(columns={'Date': 'ds', 'Price': 'y'})
     df.dropna(inplace=True)
 
     # Display historical data
