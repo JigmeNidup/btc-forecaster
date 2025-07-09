@@ -4,13 +4,13 @@ import matplotlib.pyplot as plt
 
 # 1. Load the BTC Price CSV
 # Replace with your actual CSV filename
-csv_file = 'btc_prices.csv'
+csv_file = 'btc_price_2020_2025.csv'
 df = pd.read_csv(csv_file)
 
 # 2. Preprocess Data
 # Ensure correct date parsing and select necessary columns
 df['Date'] = pd.to_datetime(df['Date'])
-df = df[['Date', 'Close**']].rename(columns={'Date': 'ds', 'Close**': 'y'})
+df = df[['Date', 'Price']].rename(columns={'Date': 'ds', 'Price': 'y'})
 
 # Optional: Remove rows with missing values
 df.dropna(inplace=True)
