@@ -1,94 +1,183 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 from prophet import Prophet
 import plotly.graph_objs as go
 from datetime import datetime
+from sklearn.preprocessing import MinMaxScaler
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense, Input
+from statsmodels.tsa.statespace.sarimax import SARIMAX
 
-st.set_page_config(page_title="Bitcoin Price Forecast (Custom Date Range)", layout="wide")
+st.set_page_config(page_title="Bitcoin Price Forecast Dashboard", layout="wide")
+st.title("📈 Bitcoin Price Forecast Dashboard")
 
-st.title("📈 Bitcoin Price Forecast with Custom Date Range & Projection Horizon")
-
-# Upload CSV
-uploaded_file = st.file_uploader("Upload your BTC Price CSV", type=['csv'])
+uploaded_file = st.file_uploader("Upload your CSV (Date + Numeric Fields)", type=['csv'])
 
 if uploaded_file:
-    # Load Data
     df = pd.read_csv(uploaded_file)
-    df['Date'] = pd.to_datetime(df['Date'])
-    df = df[['Date', 'Price']].rename(columns={'Date': 'ds', 'Price': 'y'})
-    df.dropna(inplace=True)
 
-    # Sidebar: Date Range Selection
-    st.sidebar.header("🔎 Select Historical Date Range for Forecast")
-    min_date = df['ds'].min().date()
-    max_date = df['ds'].max().date()
+    st.subheader("📄 Uploaded Data Preview")
+    st.dataframe(df)  # Show full CSV
 
-    start_date = st.sidebar.date_input("Start Date", min_value=min_date, max_value=max_date, value=min_date)
-    end_date = st.sidebar.date_input("End Date", min_value=min_date, max_value=max_date, value=max_date)
+    date_columns = [col for col in df.columns if pd.api.types.is_datetime64_any_dtype(df[col]) or 'date' in col.lower()]
+    if not date_columns:
+        st.error("❌ No valid Date column found.")
+    else:
+        date_col = date_columns[0]
+        df[date_col] = pd.to_datetime(df[date_col])
 
-    # Sidebar: Projection End Year
-    st.sidebar.header("🛠 Select Forecast Horizon")
-    projection_year = st.sidebar.selectbox("Forecast Until Year", [2026, 2027, 2028, 2029, 2030], index=2)
-
-    # Filter Data
-    filtered_df = df[(df['ds'].dt.date >= start_date) & (df['ds'].dt.date <= end_date)]
-
-    st.subheader(f"📊 BTC Historical Prices from {start_date} to {end_date}")
-    fig_raw = go.Figure()
-    fig_raw.add_trace(go.Scatter(x=filtered_df['ds'], y=filtered_df['y'], mode='lines', name='Historical Price'))
-    fig_raw.update_layout(title='BTC Historical Prices', xaxis_title='Date', yaxis_title='Price (USD)')
-    st.plotly_chart(fig_raw, use_container_width=True)
-
-    # Forecast Button
-    if st.button("🚀 Start Forecast"):
-        if filtered_df.empty:
-            st.error("❌ Selected date range has no data. Please adjust the dates.")
+        numeric_cols = [col for col in df.select_dtypes(include=[np.number]).columns if col != date_col]
+        if not numeric_cols:
+            st.error("❌ No numeric fields to forecast.")
         else:
-            st.success(f"Running Forecast using data from {start_date} to {end_date}...")
+            target_field = st.sidebar.selectbox("Select field to forecast:", numeric_cols)
 
-            # Train Prophet only on selected date range
-            model = Prophet(daily_seasonality=True, yearly_seasonality=True, weekly_seasonality=True)
-            model.fit(filtered_df)
+            min_date = df[date_col].min().date()
+            max_date = df[date_col].max().date()
 
-            # Set forecast horizon
-            last_date = filtered_df['ds'].max().date()
-            forecast_end_date = datetime(projection_year, 12, 31).date()
-            delta_days = (forecast_end_date - last_date).days
-            delta_days = max(delta_days, 0)
+            start_date = st.sidebar.date_input("Start Date", min_value=min_date, max_value=max_date, value=min_date)
+            end_date = st.sidebar.date_input("End Date", min_value=min_date, max_value=max_date, value=max_date)
 
-            future = model.make_future_dataframe(periods=delta_days)
-            forecast = model.predict(future)
+            # Projection date picker (year-level)
+            projection_date = st.sidebar.date_input(
+                "Projection Date (Year)",
+                value=datetime(2028, 12, 31),
+                min_value=max_date,
+            )
 
-            # Merge Historical + Forecast
-            merged = pd.merge(filtered_df, forecast[['ds', 'yhat']], on='ds', how='outer')
+            model_choice = st.sidebar.selectbox("Forecasting Model", ["Prophet", "LSTM", "SARIMA", "Monte Carlo"])
 
-            # Plot Combined Chart
-            st.subheader(f"🔮 BTC Price Forecast (Based on {start_date} to {end_date}, Projected to {projection_year})")
-            fig_overlap = go.Figure()
+            simulations = 1000
+            if model_choice == "Monte Carlo":
+                simulations = st.sidebar.number_input(
+                    "Number of Simulations",
+                    min_value=100, max_value=10000, value=1000, step=100
+                )
 
-            fig_overlap.add_trace(go.Scatter(
-                x=merged['ds'], y=merged['y'],
-                mode='lines', name='Actual Price', line=dict(color='blue')
-            ))
+            filtered_df = df[
+                (df[date_col].dt.date >= start_date) & (df[date_col].dt.date <= end_date)
+            ][[date_col, target_field]].rename(columns={date_col: 'ds', target_field: 'y'}).dropna()
 
-            fig_overlap.add_trace(go.Scatter(
-                x=merged['ds'], y=merged['yhat'],
-                mode='lines', name='Forecast Price', line=dict(color='orange', dash='dot')
-            ))
+            st.subheader("📊 Selected Data")
+            fig_selected = go.Figure()
+            fig_selected.add_trace(go.Scatter(x=filtered_df['ds'], y=filtered_df['y'], name='Selected Historical Data'))
+            fig_selected.update_layout(title='Selected Data Graph', xaxis_title='Date', yaxis_title=target_field)
+            st.plotly_chart(fig_selected, use_container_width=True)
 
-            fig_overlap.update_layout(title=f'BTC Price: Actual vs. Forecast (Data: {start_date}–{end_date}, Forecast: until {projection_year})',
-                                      xaxis_title='Date', yaxis_title='Price (USD)',
-                                      legend=dict(x=0, y=1))
+            if st.button("🚀 Start Forecast"):
+                with st.spinner('Forecasting in progress...'):
+                    last_date = filtered_df['ds'].max().date()
+                    forecast_end = projection_date
+                    future_days = max((forecast_end - last_date).days, 0)
 
-            st.plotly_chart(fig_overlap, use_container_width=True)
+                    if model_choice == "Prophet":
+                        model = Prophet()
+                        model.fit(filtered_df)
+                        future = model.make_future_dataframe(periods=future_days)
+                        forecast = model.predict(future)
+                        combined = pd.merge(filtered_df, forecast[['ds', 'yhat']], on='ds', how='right')
+                        combined['yhat'].fillna(method='ffill', inplace=True)
 
-            # Forecast Table & Download
-            st.subheader(f"📄 Forecast Data (Up to {projection_year})")
-            forecast_df = forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']]
-            st.dataframe(forecast_df.tail(365))
+                        fig = go.Figure()
+                        fig.add_trace(go.Scatter(x=combined['ds'], y=combined['y'], name='Actual'))
+                        fig.add_trace(go.Scatter(x=combined['ds'], y=combined['yhat'], name='Forecast', line=dict(color='red')))
+                        st.plotly_chart(fig, use_container_width=True)
 
-            csv = forecast_df.to_csv(index=False).encode('utf-8')
-            st.download_button("Download Forecast CSV", data=csv, file_name=f'btc_forecast_{start_date}_to_{end_date}_until_{projection_year}.csv', mime='text/csv')
+                        st.subheader("📋 Forecasted Results Table")
+                        st.dataframe(combined[['ds', 'yhat']].tail(365))
+
+                    elif model_choice == "LSTM":
+                        scaler = MinMaxScaler()
+                        scaled_y = scaler.fit_transform(filtered_df[['y']])
+                        seq_len = 30
+                        X, y_seq = [], []
+                        for i in range(seq_len, len(scaled_y)):
+                            X.append(scaled_y[i - seq_len:i, 0])
+                            y_seq.append(scaled_y[i, 0])
+                        X, y_seq = np.array(X), np.array(y_seq)
+                        X = np.reshape(X, (X.shape[0], X.shape[1], 1))
+
+                        model = Sequential([
+                            Input(shape=(seq_len, 1)),
+                            LSTM(50, return_sequences=True),
+                            LSTM(50),
+                            Dense(1)
+                        ])
+                        model.compile(optimizer='adam', loss='mean_squared_error')
+                        model.fit(X, y_seq, epochs=10, batch_size=16, verbose=0)
+
+                        predictions = []
+                        for i in range(seq_len, len(scaled_y)):
+                            seq_input = scaled_y[i - seq_len:i].reshape(1, seq_len, 1)
+                            pred = model.predict(seq_input, verbose=0)[0][0]
+                            predictions.append(pred)
+
+                        last_seq = scaled_y[-seq_len:].flatten().tolist()
+                        for _ in range(future_days):
+                            seq_input = np.array(last_seq[-seq_len:]).reshape(1, seq_len, 1)
+                            pred = model.predict(seq_input, verbose=0)[0][0]
+                            last_seq.append(pred)
+                            predictions.append(pred)
+
+                        all_preds = scaler.inverse_transform(np.array(predictions).reshape(-1, 1)).flatten()
+                        full_dates = pd.date_range(start=filtered_df['ds'].iloc[seq_len], periods=len(all_preds), freq='D')
+
+                        fig = go.Figure()
+                        fig.add_trace(go.Scatter(x=filtered_df['ds'], y=filtered_df['y'], name='Actual'))
+                        fig.add_trace(go.Scatter(x=full_dates, y=all_preds, name='Forecast', line=dict(color='red')))
+                        st.plotly_chart(fig, use_container_width=True)
+
+                        st.subheader("📋 Forecasted Results Table")
+                        forecast_df = pd.DataFrame({'ds': full_dates, 'yhat': all_preds})
+                        st.dataframe(forecast_df.tail(365))
+
+                    elif model_choice == "SARIMA":
+                        sarima_model = SARIMAX(filtered_df['y'], order=(1,1,1), seasonal_order=(1,1,1,12))
+                        sarima_fit = sarima_model.fit(disp=False)
+                        total_steps = len(filtered_df) + future_days
+                        pred = sarima_fit.get_prediction(start=0, end=total_steps-1)
+                        pred_mean = pred.predicted_mean
+                        full_dates = pd.date_range(start=filtered_df['ds'].iloc[0], periods=total_steps, freq='D')
+
+                        fig = go.Figure()
+                        fig.add_trace(go.Scatter(x=filtered_df['ds'], y=filtered_df['y'], name='Actual'))
+                        fig.add_trace(go.Scatter(x=full_dates, y=pred_mean, name='Forecast', line=dict(color='red')))
+                        st.plotly_chart(fig, use_container_width=True)
+
+                        st.subheader("📋 Forecasted Results Table")
+                        forecast_df = pd.DataFrame({'ds': full_dates, 'yhat': pred_mean.values})
+                        st.dataframe(forecast_df.tail(365))
+
+                    elif model_choice == "Monte Carlo":
+                        returns = filtered_df['y'].pct_change().dropna()
+                        mu, sigma = returns.mean(), returns.std()
+                        total_days = len(filtered_df) + future_days
+                        sim = np.zeros((total_days, simulations))
+                        for i in range(simulations):
+                            path = [filtered_df['y'].iloc[0]]
+                            path += list(filtered_df['y'].iloc[1:].values)
+                            for _ in range(future_days):
+                                path.append(path[-1] * np.exp(np.random.normal(mu, sigma)))
+                            sim[:, i] = path
+
+                        median_forecast = np.median(sim, axis=1)
+                        full_dates = pd.date_range(start=filtered_df['ds'].iloc[0], periods=total_days, freq='D')
+
+                        fig = go.Figure()
+                        fig.add_trace(go.Scatter(x=filtered_df['ds'], y=filtered_df['y'], name='Actual'))
+                        for i in range(0, simulations, max(1, simulations // 50)):
+                            fig.add_trace(go.Scatter(
+                                x=full_dates, y=sim[:, i], mode='lines',
+                                line=dict(width=0.5), name=f'Sim {i}', opacity=0.2, visible='legendonly'))
+                        fig.add_trace(go.Scatter(
+                            x=full_dates, y=median_forecast, name='Median Forecast',
+                            line=dict(color='red', dash='dot')))
+                        st.plotly_chart(fig, use_container_width=True)
+
+                        st.subheader("📋 Forecasted Results Table")
+                        forecast_df = pd.DataFrame({'ds': full_dates, 'yhat': median_forecast})
+                        st.dataframe(forecast_df.tail(365))
 
 else:
-    st.info("👆 Please upload a CSV file to get started.")
+    st.info("📤 Please upload a CSV file to begin.")
