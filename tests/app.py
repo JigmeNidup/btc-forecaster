@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 
 # 1. Load the BTC Price CSV
 # Replace with your actual CSV filename
-csv_file = 'btc_price_2020_2025.csv'
+csv_file = 'btc_prices.csv'
 df = pd.read_csv(csv_file)
 
 # 2. Preprocess Data

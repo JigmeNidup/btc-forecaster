@@ -1,0 +1,9 @@
+
+#script
+pip install prophet pandas matplotlib
+python app.py
+
+
+#web dashboard
+pip install streamlit prophet pandas matplotlib plotly statsmodels
+streamlit run streamlit_app.py
