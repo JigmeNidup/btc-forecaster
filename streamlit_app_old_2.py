@@ -58,10 +58,6 @@ It works best with stable patterns and cyclical behavior in time series data.
                 "Monte Carlo": """
 **Monte Carlo Simulation** generates multiple future paths using random sampling based on historical volatility.  
 It provides a probabilistic range of possible outcomes rather than a single forecast.
-""", 
-                "Moving Averages (MAs)": """
-**Moving Averages (50-day & 200-day)** are simple technical indicators used to smooth historical price data.  
-They are not predictive models but can help identify trend directions and crossover signals.
 """
             }
 
@@ -195,61 +191,6 @@ They are not predictive models but can help identify trend directions and crosso
                         st.subheader("📋 Forecasted Results Table")
                         forecast_df = pd.DataFrame({'ds': full_dates, 'yhat': median_forecast})
                         st.dataframe(forecast_df.tail(365))
-                        
-                    elif model_choice == "Moving Averages (MAs)":
-                        df_ma = filtered_df.copy()
-                        df_ma['MA_50'] = df_ma['y'].rolling(window=50).mean()
-                        df_ma['MA_200'] = df_ma['y'].rolling(window=200).mean()
-
-                        # Calculate the last slope (day-to-day difference) of MA_50 and MA_200
-                        ma_50_slope = df_ma['MA_50'].diff().dropna().iloc[-1]
-                        ma_200_slope = df_ma['MA_200'].diff().dropna().iloc[-1]
-
-                        # Number of days to forecast
-                        last_date = df_ma['ds'].max()
-                        future_days = max((projection_date - last_date.date()).days, 0)
-                        future_dates = pd.date_range(start=last_date + pd.Timedelta(days=1), periods=future_days, freq='D')
-
-                        # Extend MA values into the future using the last slope (linear extrapolation)
-                        last_ma_50 = df_ma['MA_50'].iloc[-1]
-                        last_ma_200 = df_ma['MA_200'].iloc[-1]
-
-                        forecast_ma_50 = [last_ma_50 + ma_50_slope * (i+1) for i in range(future_days)]
-                        forecast_ma_200 = [last_ma_200 + ma_200_slope * (i+1) for i in range(future_days)]
-
-                        # For forecasted price, take average of both MAs
-                        forecast_price = [(f50 + f200) / 2 for f50, f200 in zip(forecast_ma_50, forecast_ma_200)]
-
-                        # Combine historical and forecast data for plotting
-                        df_forecast = pd.DataFrame({
-                            'ds': future_dates,
-                            'Forecast_MA_50': forecast_ma_50,
-                            'Forecast_MA_200': forecast_ma_200,
-                            'Forecast_Price': forecast_price
-                        })
-
-                        # Plot historical actual and MAs
-                        fig = go.Figure()
-                        fig.add_trace(go.Scatter(x=df_ma['ds'], y=df_ma['y'], name='Actual', line=dict(color='blue')))
-                        fig.add_trace(go.Scatter(x=df_ma['ds'], y=df_ma['MA_50'], name='50-Day MA', line=dict(color='orange')))
-                        fig.add_trace(go.Scatter(x=df_ma['ds'], y=df_ma['MA_200'], name='200-Day MA', line=dict(color='green')))
-
-                        # Plot forecasted MAs and price
-                        fig.add_trace(go.Scatter(x=df_forecast['ds'], y=df_forecast['Forecast_MA_50'], 
-                                                name='Forecast 50-Day MA', line=dict(color='orange', dash='dot')))
-                        fig.add_trace(go.Scatter(x=df_forecast['ds'], y=df_forecast['Forecast_MA_200'], 
-                                                name='Forecast 200-Day MA', line=dict(color='green', dash='dot')))
-                        fig.add_trace(go.Scatter(x=df_forecast['ds'], y=df_forecast['Forecast_Price'], 
-                                                name='Forecast Price (Avg MA)', line=dict(color='red', dash='dash')))
-
-                        fig.update_layout(title=f'50 & 200-Day Moving Averages with Forecast till {projection_date}', 
-                                        xaxis_title='Date', yaxis_title=target_field)
-                        st.plotly_chart(fig, use_container_width=True)
-
-                        # Show forecast table
-                        st.subheader("📋 Forecasted Moving Averages & Price")
-                        st.dataframe(df_forecast[['ds', 'Forecast_MA_50', 'Forecast_MA_200', 'Forecast_Price']].tail(365))
-
 
 else:
     st.info("📤 Please upload a CSV file to begin.")
