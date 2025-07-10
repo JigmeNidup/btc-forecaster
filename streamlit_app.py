@@ -70,7 +70,7 @@ They are not predictive models but can help identify trend directions and crosso
             with st.sidebar.expander("ℹ️ Info about Selected Model"):
                 st.markdown(model_descriptions[model_choice])
 
-            simulations = 1000
+            simulations = 400
             if model_choice == "Monte Carlo":
                 simulations = st.sidebar.number_input("Number of Simulations", min_value=100, max_value=10000, value=1000, step=100)
 
